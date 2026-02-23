@@ -1,0 +1,50 @@
+# Environment & secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Temp files
+temp/
+*.mp4
+*.mkv
+*.webm
+*.avi
+*.mov
+
+# User data (settings JSONs)
+data/users/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs
+*.log
+bot_log.txt
+
+# Test/debug artifacts
+tools/visual_output/
+tz_output*.txt
+
+# Claude
+.claude/
+memory/
+
+# Dev/test tools
+tools/
+
+# Docs (ТЗ)
+*.docx
