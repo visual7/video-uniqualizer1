@@ -7,6 +7,7 @@ import asyncio
 import logging
 import os
 import re
+import shutil
 import uuid
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
 )
 
-from bot.config import TEMP_DIR, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS
+from bot.config import TEMP_DIR, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS, LOCAL_API_URL
 from bot.i18n import t
 from bot.models.user_settings import UserSettings
 from bot.queue_worker.worker import queue, JobStatus
@@ -58,6 +59,16 @@ QUICK_METHODS_RU = {
 
 _pending_videos: dict[str, dict] = {}    # vid_id → {path, info, user_id}
 _user_latest_vid: dict[int, str] = {}   # user_id → latest vid_id (for "back to card")
+
+
+async def _download_tg_file(bot: Bot, file_id: str, dest: str) -> None:
+    """Download a Telegram file. With local API server — copy from disk."""
+    file = await bot.get_file(file_id)
+    if LOCAL_API_URL and file.file_path and os.path.isabs(file.file_path):
+        # Local Bot API server stores files on disk — just copy
+        await asyncio.to_thread(shutil.copy2, file.file_path, dest)
+    else:
+        await bot.download_file(file.file_path, dest)
 
 
 def has_pending_video(user_id: int) -> bool:
@@ -189,10 +200,9 @@ async def on_video(message: Message, bot: Bot):
     status_msg = await message.answer(t("video_analysing", lang))
 
     try:
-        file = await bot.get_file(video.file_id)
-        ext = Path(file.file_path).suffix or ".mp4"
+        ext = ".mp4"
         local_path = str(TEMP_DIR / f"{uuid.uuid4().hex}{ext}")
-        await bot.download_file(file.file_path, local_path)
+        await _download_tg_file(bot, video.file_id, local_path)
     except Exception as e:
         logger.error(f"Download failed for user {user_id}: {e}")
         await status_msg.edit_text(t("err_download", lang, e=str(e)[:200]))
@@ -271,9 +281,8 @@ async def on_document(message: Message, bot: Bot):
     status_msg = await message.answer(t("video_analysing", lang))
 
     try:
-        file = await bot.get_file(doc.file_id)
         local_path = str(TEMP_DIR / f"{uuid.uuid4().hex}{ext}")
-        await bot.download_file(file.file_path, local_path)
+        await _download_tg_file(bot, doc.file_id, local_path)
     except Exception as e:
         logger.error(f"Download failed for user {user_id}: {e}")
         await status_msg.edit_text(t("err_download", lang, e=str(e)[:200]))
