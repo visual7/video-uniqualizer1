@@ -243,12 +243,20 @@ class VideoQueue:
                 pass
 
         completed_paths: list[str] = []
+        completed_results: list[tuple[int, dict]] = []  # (copy_index, result)
         all_hashes_unique = True
         seen_hashes: set[str] = set()
         send_failed = False  # track if any send to user failed
+        _copy_lock = asyncio.Lock()  # protect shared state in parallel processing
 
-        try:
-            for i in range(copies):
+        # Parallel processing: up to 3 copies at once
+        MAX_PARALLEL_COPIES = 3
+        copy_sem = asyncio.Semaphore(MAX_PARALLEL_COPIES)
+
+        async def _process_one_copy(i: int) -> None:
+            nonlocal all_hashes_unique, send_failed
+
+            async with copy_sem:
                 copy_status[i] = "⚙️ запускается…"
 
                 # Разброс интенсивности: клонируем настройки и случайно меняем intensity
@@ -261,12 +269,10 @@ class VideoQueue:
                     for ms in cur_settings.methods.values():
                         if not ms.enabled:
                             continue
-                        # variation is ±% (e.g. 10 → ±10% of current intensity)
                         delta = rng.uniform(-variation, variation)
                         new_intensity = ms.intensity + delta
                         ms.intensity = max(1, min(100, round(new_intensity)))
 
-                # Уникальный seed для каждой копии
                 job_seed = random.randint(0, 2**32 - 1)
 
                 async def progress_cb(pct: float, msg: str = "", _i=i) -> None:
@@ -279,21 +285,22 @@ class VideoQueue:
                     job_seed=job_seed,
                 )
 
-                # Validate output is not empty
                 out_size = result.get("output_size", 0)
                 if out_size < 1024:
                     logger.error(f"Job {job.id} copy {i+1}: output too small ({out_size} bytes), skipping")
                     _safe_remove(result["output_path"])
                     copy_status[i] = "⚠️ пустой файл"
-                    continue
+                    return
 
                 out_hash = result["output_hash_md5"]
-                if out_hash in seen_hashes:
-                    all_hashes_unique = False
-                seen_hashes.add(out_hash)
+                async with _copy_lock:
+                    if out_hash in seen_hashes:
+                        all_hashes_unique = False
+                    seen_hashes.add(out_hash)
+                    completed_paths.append(result["output_path"])
+                    completed_results.append((i, result))
 
                 copy_status[i] = f"✅ готово  <code>{out_hash[:8]}…</code>"
-                completed_paths.append(result["output_path"])
                 await update_progress_msg(i, 1.0, "Готово!")
 
                 # Отправляем сразу если копий мало (≤4)
@@ -329,6 +336,17 @@ class VideoQueue:
                     except Exception as e:
                         logger.error(f"Failed to send copy {i+1}: {e}")
                         send_failed = True
+
+        try:
+            # Launch all copies in parallel (limited by semaphore)
+            tasks = [asyncio.create_task(_process_one_copy(i)) for i in range(copies)]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Check for exceptions in tasks
+            for i, task in enumerate(tasks):
+                if task.exception():
+                    logger.error(f"Job {job.id} copy {i+1} failed: {task.exception()}")
+                    copy_status[i] = "❌ ошибка"
 
             job.status = JobStatus.DONE
 

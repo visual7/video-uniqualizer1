@@ -224,10 +224,23 @@ async def process_video(
         cmd += ["-an"]
 
     # Output encoding options
+    use_gpu = info.get("use_gpu", False)
     if "c:v" not in out_opts:
-        out_opts["c:v"] = "libx264"
-    if "crf" not in out_opts and "b:v" not in out_opts:
-        out_opts["crf"] = "18"
+        out_opts["c:v"] = "h264_nvenc" if use_gpu else "libx264"
+    is_nvenc = "nvenc" in out_opts.get("c:v", "")
+    if is_nvenc:
+        # NVENC uses -qp instead of -crf, and ignores -preset names
+        if "crf" not in out_opts and "b:v" not in out_opts and "qp" not in out_opts:
+            out_opts["qp"] = "23"
+        if "preset" not in out_opts:
+            out_opts["preset"] = "p4"  # NVENC fast preset
+        # Remove crf if set by a method — NVENC doesn't support it
+        out_opts.pop("crf", None)
+    else:
+        if "crf" not in out_opts and "b:v" not in out_opts:
+            out_opts["crf"] = "23"
+        if "preset" not in out_opts:
+            out_opts["preset"] = "veryfast"
     if "c:a" not in out_opts and info.get("has_audio"):
         out_opts["c:a"] = "aac"
     if "b:a" not in out_opts and info.get("has_audio"):
@@ -283,7 +296,7 @@ async def process_video(
             video_only = str(TEMP_DIR / f"{job_id}_noaudio.mp4")
             strip_cmd  = [
                 FFMPEG_PATH, "-y", "-i", current_path,
-                "-an", "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
+                "-an", "-c:v", "libx264", "-crf", "23", "-preset", "veryfast", "-pix_fmt", "yuv420p",
                 video_only,
             ]
             await run_ffmpeg(strip_cmd, duration=info["duration"])
