@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Callable, Optional
 
-from bot.config import MAX_CONCURRENT_JOBS, RATE_LIMIT_PER_MIN, TEMP_DIR
+from bot.config import MAX_CONCURRENT_JOBS, RATE_LIMIT_PER_MIN, TEMP_DIR, TG_UPLOAD_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -207,8 +207,8 @@ class VideoQueue:
         copies    = max(1, job.copies)
         variation = job.variation  # ±% разброс интенсивности
 
-        # Telegram bot API limit for sending files
-        TG_MAX_FILE_SIZE = 49 * 1024 * 1024  # 49 MB (safe margin under 50MB)
+        # Upload limit: 2 GB with local API server, 49 MB with standard Telegram
+        TG_MAX_FILE_SIZE = TG_UPLOAD_LIMIT
 
         # Строки прогресса для каждой копии
         copy_status = ["⬜ ожидает"] * copies
@@ -307,9 +307,10 @@ class VideoQueue:
                     try:
                         from aiogram.types import FSInputFile
                         if out_size > TG_MAX_FILE_SIZE:
+                            limit_mb = TG_MAX_FILE_SIZE // (1024 * 1024)
                             await self._bot.send_message(
                                 chat_id=job.chat_id,
-                                text=f"⚠️ Копия {i+1} слишком большая ({out_size/1024/1024:.0f} МБ > 50 МБ лимит Telegram).\n"
+                                text=f"⚠️ Копия {i+1} слишком большая ({out_size/1024/1024:.0f} МБ > {limit_mb} МБ лимит).\n"
                                      f"Файл обработан, но не может быть отправлен.",
                                 parse_mode="HTML",
                             )
@@ -403,7 +404,7 @@ class VideoQueue:
                             text=(
                                 f"⚠️ <b>Обработка завершена, но не все файлы удалось отправить</b>\n"
                                 f"Обработано: {len(completed_paths)}/{copies}\n"
-                                f"Проблема: файл(ы) превышают лимит Telegram (50 МБ) или ошибка сети.\n"
+                                f"Проблема: файл(ы) превышают лимит ({TG_MAX_FILE_SIZE // (1024*1024)} МБ) или ошибка сети.\n"
                                 f"Попробуйте уменьшить количество копий."
                             ),
                             chat_id=job.chat_id,

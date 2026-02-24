@@ -7,10 +7,12 @@ import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from bot.config import BOT_TOKEN, LOG_LEVEL
+from bot.config import BOT_TOKEN, LOG_LEVEL, LOCAL_API_URL
 from bot.handlers import start, video, settings, presets
 from bot.queue_worker.worker import queue
 
@@ -30,8 +32,16 @@ async def main() -> None:
 
     logger.info("Starting Video Uniqueluzer bot…")
 
+    session = None
+    if LOCAL_API_URL:
+        logger.info(f"Using LOCAL Bot API server: {LOCAL_API_URL}")
+        session = AiohttpSession(
+            api=TelegramAPIServer.from_base(LOCAL_API_URL)
+        )
+
     bot = Bot(
         token=BOT_TOKEN,
+        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 

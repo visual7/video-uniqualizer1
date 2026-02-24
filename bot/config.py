@@ -25,6 +25,15 @@ for d in (TEMP_DIR, DATA_DIR, USERS_DIR, LUTS_DIR, TEXTURES_DIR):
 # ── Telegram ───────────────────────────────────────────────────────────────────
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 
+# Local Bot API server (leave empty to use default Telegram servers)
+# Example: http://localhost:8081
+LOCAL_API_URL: str = os.getenv("LOCAL_API_URL", "")
+
+# When using local server, upload limit is 2 GB; otherwise 49 MB (Telegram limit)
+TG_UPLOAD_LIMIT: int = (
+    2 * 1024**3 if os.getenv("LOCAL_API_URL", "") else 49 * 1024 * 1024
+)
+
 # ── FFmpeg ─────────────────────────────────────────────────────────────────────
 FFMPEG_PATH:  str = os.getenv("FFMPEG_PATH",  "ffmpeg")
 FFPROBE_PATH: str = os.getenv("FFPROBE_PATH", "ffprobe")
