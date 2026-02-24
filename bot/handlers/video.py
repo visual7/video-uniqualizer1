@@ -247,7 +247,7 @@ async def on_video(message: Message, bot: Bot):
 # Receive video as document (uncompressed)
 # ════════════════════════════════════════════════════════════════════════════
 
-@router.message(F.document)
+@router.message(F.document, ~F.video)
 async def on_document(message: Message, bot: Bot):
     doc = message.document
     if not doc.file_name:

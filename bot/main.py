@@ -63,6 +63,9 @@ async def main() -> None:
     if not ffprobe_available():
         logger.error("FFprobe not found! Video analysis will fail.")
 
+    # Drop pending updates & clear webhook (prevents duplicates after restart)
+    await bot.delete_webhook(drop_pending_updates=True)
+
     logger.info("Bot is polling…")
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
