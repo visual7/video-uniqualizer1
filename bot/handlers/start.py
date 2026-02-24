@@ -3,7 +3,9 @@
 """
 from __future__ import annotations
 
+import io
 import logging
+import os
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -11,6 +13,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
 )
 
+from bot.config import LOCAL_API_URL
 from bot.models.user_settings import UserSettings
 from bot.queue_worker.worker import queue, JobStatus
 from bot.i18n import t, LANGUAGES
@@ -294,9 +297,13 @@ async def _do_import_file(message: Message, bot) -> None:
     lang = s.language
     doc  = message.document
     try:
-        file     = await bot.get_file(doc.file_id)
-        data     = await bot.download_file(file.file_path)
-        json_str = data.read().decode("utf-8")
+        file = await bot.get_file(doc.file_id)
+        if LOCAL_API_URL and file.file_path and os.path.isabs(file.file_path):
+            with open(file.file_path, "rb") as f:
+                json_str = f.read().decode("utf-8")
+        else:
+            data = await bot.download_file(file.file_path)
+            json_str = data.read().decode("utf-8")
     except Exception as e:
         await message.answer(f"❌ Не удалось скачать файл: {str(e)[:100]}", parse_mode="HTML")
         return
