@@ -256,13 +256,13 @@ _STRINGS: dict[str, dict[str, str]] = {
     "import_hint": {
         "en": (
             "📥 <b>Import settings</b>\n\n"
-            "Send a JSON settings file as a document with caption <code>/import</code>\n"
-            "or use: <code>/import {...json...}</code>"
+            "Now send the settings file (JSON).\n"
+            "Just drag and drop — no caption needed."
         ),
         "ru": (
             "📥 <b>Импорт настроек</b>\n\n"
-            "Отправьте JSON-файл настроек как документ с подписью <code>/import</code>\n"
-            "или используйте: <code>/import {...json...}</code>"
+            "Теперь отправьте файл с настройками (JSON).\n"
+            "Просто перетащите файл — подпись не нужна."
         ),
     },
     "import_ok": {
@@ -270,8 +270,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ru": "✅ <b>Настройки импортированы</b>\nАктивных методов: {active}/{total}",
     },
     "import_err": {
-        "en": "❌ JSON parse error. Check the format.",
-        "ru": "❌ Ошибка разбора JSON. Проверьте формат.",
+        "en": "❌ Could not read settings from this file.\nMake sure it's a valid JSON exported via /export.",
+        "ru": "❌ Не удалось прочитать настройки из этого файла.\nУбедитесь, что это JSON, экспортированный через /export.",
     },
 
     # ── Video card ─────────────────────────────────────────────────────────────

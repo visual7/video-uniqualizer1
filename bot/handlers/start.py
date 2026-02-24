@@ -265,6 +265,9 @@ async def cmd_export(message: Message):
 
 # ── /import ────────────────────────────────────────────────────────────────────
 
+# Users waiting to send a file after /import
+_awaiting_import: dict[int, bool] = {}
+
 @router.message(Command("import"))
 async def cmd_import(message: Message):
     s    = UserSettings.load(message.from_user.id)
@@ -273,6 +276,8 @@ async def cmd_import(message: Message):
     parts = text.split(maxsplit=1)
     json_str = parts[1].strip() if len(parts) > 1 else ""
     if not json_str:
+        # Enter waiting state — next document from this user will be imported
+        _awaiting_import[message.from_user.id] = True
         await message.answer(t("import_hint", lang), parse_mode="HTML")
         return
     ok = s.import_json(json_str)
@@ -283,23 +288,40 @@ async def cmd_import(message: Message):
     )
 
 
-@router.message(F.document & F.caption.func(lambda c: c and c.startswith("/import")))
-async def cmd_import_file(message: Message, bot):
+async def _do_import_file(message: Message, bot) -> None:
+    """Shared logic for importing settings from a document."""
     s    = UserSettings.load(message.from_user.id)
     lang = s.language
     doc  = message.document
-    if not (doc.file_name or "").endswith(".json"):
-        await message.answer("❌ Expected a .json file.")
+    try:
+        file     = await bot.get_file(doc.file_id)
+        data     = await bot.download_file(file.file_path)
+        json_str = data.read().decode("utf-8")
+    except Exception as e:
+        await message.answer(f"❌ Не удалось скачать файл: {str(e)[:100]}", parse_mode="HTML")
         return
-    file     = await bot.get_file(doc.file_id)
-    data     = await bot.download_file(file.file_path)
-    json_str = data.read().decode("utf-8")
     ok = s.import_json(json_str)
     active = sum(1 for ms in s.methods.values() if ms.enabled)
     await message.answer(
         t("import_ok", lang, active=active, total=TOTAL_METHODS) if ok else t("import_err", lang),
         parse_mode="HTML",
     )
+
+
+# Accept file with caption /import
+@router.message(F.document & F.caption.func(lambda c: c and c.startswith("/import")))
+async def cmd_import_file_caption(message: Message, bot):
+    await _do_import_file(message, bot)
+
+
+# Accept any document after /import command (waiting state)
+@router.message(F.document)
+async def cmd_import_file_waiting(message: Message, bot):
+    uid = message.from_user.id
+    if uid not in _awaiting_import:
+        return  # not waiting, skip — let video handler process it
+    del _awaiting_import[uid]
+    await _do_import_file(message, bot)
 
 
 # ── Reply keyboard button handlers ────────────────────────────────────────────
