@@ -73,7 +73,7 @@ def build_2_vflip(intensity, seed, info):
 
 def build_3_rotate(intensity, seed, info):
     r = rng(seed, 3)
-    max_angle = intensity_val(intensity, 0.3, 5)
+    max_angle = intensity_val(intensity, 0.3, 7)
     angle_deg = r.uniform(-max_angle, max_angle)
     angle_rad = math.radians(angle_deg)
     abs_rad = abs(angle_rad)
@@ -96,7 +96,7 @@ def build_3_rotate(intensity, seed, info):
 
 def build_4_skew(intensity, seed, info):
     r = rng(seed, 4)
-    max_deg = intensity_val(intensity, 0.2, 2)
+    max_deg = intensity_val(intensity, 0.2, 4)
     angle_rad = math.radians(r.uniform(-max_deg, max_deg))
     w, h = info["width"], info["height"]
     shift = int(h * math.tan(abs(angle_rad)))
@@ -115,7 +115,7 @@ def build_4_skew(intensity, seed, info):
 
 def build_5_crop(intensity, seed, info):
     r = rng(seed, 5)
-    pct = intensity_val(intensity, 0.003, 0.04)
+    pct = intensity_val(intensity, 0.003, 0.07)
     p = r.uniform(pct * 0.5, pct)
     w, h = info["width"], info["height"]
     cw = int(w * (1 - 2 * p))
@@ -125,7 +125,7 @@ def build_5_crop(intensity, seed, info):
 
 def build_6_zoom(intensity, seed, info):
     r = rng(seed, 6)
-    max_zoom = intensity_val(intensity, 0.005, 0.04)
+    max_zoom = intensity_val(intensity, 0.005, 0.07)
     zoom = 1.0 + r.uniform(0, max_zoom)
     w, h = info["width"], info["height"]
     nw = int(w * zoom)
@@ -135,7 +135,7 @@ def build_6_zoom(intensity, seed, info):
 
 def build_7_pan(intensity, seed, info):
     r = rng(seed, 7)
-    max_pct = intensity_val(intensity, 0.003, 0.02)
+    max_pct = intensity_val(intensity, 0.003, 0.04)
     dx_pct = r.uniform(-max_pct, max_pct)
     dy_pct = r.uniform(-max_pct, max_pct)
     w, h = info["width"], info["height"]
@@ -151,7 +151,7 @@ def build_7_pan(intensity, seed, info):
 
 def build_8_perspective(intensity, seed, info):
     r = rng(seed, 8)
-    max_shift = int(intensity_val(intensity, 2, 15))
+    max_shift = int(intensity_val(intensity, 2, 25))
     w, h = info["width"], info["height"]
     shifts = [r.randint(0, max_shift) for _ in range(8)]
     x0, y0 = shifts[0], shifts[1]
@@ -163,7 +163,7 @@ def build_8_perspective(intensity, seed, info):
 
 def build_9_aspect_padding(intensity, seed, info):
     r = rng(seed, 9)
-    pct = intensity_val(intensity, 0.005, 0.02)
+    pct = intensity_val(intensity, 0.005, 0.04)
     pad = int(info["height"] * r.uniform(pct * 0.5, pct))
     w, h = info["width"], info["height"]
     axis = r.choice(["h", "v"])
@@ -175,7 +175,7 @@ def build_9_aspect_padding(intensity, seed, info):
 
 def build_69_horizontal_parallax(intensity, seed, info):
     r = rng(seed, 69)
-    max_shift = int(intensity_val(intensity, 2, 12))
+    max_shift = int(intensity_val(intensity, 2, 20))
     shift = r.randint(max(1, max_shift // 2), max(1, max_shift))
     w, h = info["width"], info["height"]
     if r.random() < 0.5:
@@ -193,7 +193,7 @@ def build_69_horizontal_parallax(intensity, seed, info):
 
 def build_70_vertical_parallax(intensity, seed, info):
     r = rng(seed, 70)
-    max_shift = int(intensity_val(intensity, 2, 12))
+    max_shift = int(intensity_val(intensity, 2, 20))
     shift = r.randint(max(1, max_shift // 2), max(1, max_shift))
     w, h = info["width"], info["height"]
     if r.random() < 0.5:
