@@ -14,6 +14,7 @@ from enum import Enum, auto
 from typing import Any, Callable, Optional
 
 from bot.config import MAX_CONCURRENT_JOBS, RATE_LIMIT_PER_MIN, TEMP_DIR, TG_UPLOAD_LIMIT
+from bot.i18n import t as _t
 
 logger = logging.getLogger(__name__)
 
@@ -205,33 +206,32 @@ class VideoQueue:
         logger.info(f"Processing job {job.id} copies={job.copies} for user {job.user_id}")
 
         copies    = max(1, job.copies)
-        variation = job.variation  # ±% разброс интенсивности
+        variation = job.variation
+        lang      = job.settings.language
 
         # Upload limit: 2 GB with local API server, 49 MB with standard Telegram
         TG_MAX_FILE_SIZE = TG_UPLOAD_LIMIT
 
-        # Строки прогресса для каждой копии
-        copy_status = ["⬜ ожидает"] * copies
-        _last_update = [0.0]  # троттлинг — не чаще раза в 3 секунды
+        copy_status = [_t("worker_waiting", lang)] * copies
+        _last_update = [0.0]
 
         async def update_progress_msg(copy_idx: int, pct: float, msg: str = "") -> None:
-            """Обновляет общее сообщение прогресса (не чаще 1 раза в 3с)."""
             if not self._bot or not job.message_id:
                 return
             now = time.time()
-            # Обновляем только раз в 3 секунды, кроме финального (pct==1.0)
             if pct < 1.0 and now - _last_update[0] < 3.0:
                 copy_status[copy_idx] = f"{_make_bar(pct)} {int(pct*100)}%"
                 return
             _last_update[0] = now
             try:
                 bar = _make_bar(pct)
-                copy_status[copy_idx] = f"{bar} {int(pct*100)}%  {_stage_label(pct, msg)}"
+                copy_status[copy_idx] = f"{bar} {int(pct*100)}%  {_stage_label(pct, msg, lang)}"
 
-                lines = [f"⚙️ <b>Обрабатываю {copies} {'копию' if copies==1 else 'копии' if copies<=4 else 'копий'}…</b>\n"]
+                copies_word = _t("worker_copies_word", lang, n=copies) if copies == 1 else _t("worker_copies_word_plural", lang, n=copies)
+                lines = [_t("worker_processing", lang, copies=copies_word)]
                 for i, st in enumerate(copy_status):
                     prefix = "▶️" if i == copy_idx else ("✅" if "100%" in st else "⬜")
-                    lines.append(f"{prefix} Копия {i+1}/{copies}:  {st}")
+                    lines.append(f"{prefix} {_t('worker_copy_of', lang, i=i+1, n=copies)}:  {st}")
 
                 await self._bot.edit_message_text(
                     text="\n".join(lines),
@@ -257,7 +257,7 @@ class VideoQueue:
             nonlocal all_hashes_unique, send_failed
 
             async with copy_sem:
-                copy_status[i] = "⚙️ запускается…"
+                copy_status[i] = _t("worker_starting", lang)
 
                 # Разброс интенсивности: клонируем настройки и случайно меняем intensity
                 import copy as _copy
@@ -289,7 +289,7 @@ class VideoQueue:
                 if out_size < 1024:
                     logger.error(f"Job {job.id} copy {i+1}: output too small ({out_size} bytes), skipping")
                     _safe_remove(result["output_path"])
-                    copy_status[i] = "⚠️ пустой файл"
+                    copy_status[i] = _t("worker_empty", lang)
                     return
 
                 out_hash = result["output_hash_md5"]
@@ -300,25 +300,22 @@ class VideoQueue:
                     completed_paths.append(result["output_path"])
                     completed_results.append((i, result))
 
-                copy_status[i] = f"✅ готово  <code>{out_hash[:8]}…</code>"
-                await update_progress_msg(i, 1.0, "Готово!")
+                copy_status[i] = _t("worker_done", lang, h=out_hash[:8])
+                await update_progress_msg(i, 1.0)
 
                 # Отправляем сразу если копий мало (≤4)
                 if copies <= 4 and self._bot:
-                    report = build_report(result)
+                    report = build_report(result, lang)
+                    hash_note = _t("worker_hash_ok", lang) if result['input_hash_md5'] != out_hash else _t("worker_hash_same", lang)
                     caption = (
-                        f"📦 <b>Копия {i+1}/{copies}</b>\n"
-                        f"{'✅ Хеш уникален' if result['input_hash_md5'] != out_hash else '⚠️ Хеш совпал'}\n\n"
-                        + report
+                        _t("report_copy_label", lang, i=i+1, n=copies, hash_note=hash_note) + "\n\n" + report
                     ) if copies > 1 else report
                     try:
                         from aiogram.types import FSInputFile
                         if out_size > TG_MAX_FILE_SIZE:
-                            limit_mb = TG_MAX_FILE_SIZE // (1024 * 1024)
                             await self._bot.send_message(
                                 chat_id=job.chat_id,
-                                text=f"⚠️ Копия {i+1} слишком большая ({out_size/1024/1024:.0f} МБ > {limit_mb} МБ лимит).\n"
-                                     f"Файл обработан, но не может быть отправлен.",
+                                text=_t("worker_too_big", lang, i=i+1, size=f"{out_size/1024/1024:.0f}", limit=f"{TG_MAX_FILE_SIZE // (1024*1024)}"),
                                 parse_mode="HTML",
                             )
                             send_failed = True
@@ -346,20 +343,20 @@ class VideoQueue:
             for i, task in enumerate(tasks):
                 if task.exception():
                     logger.error(f"Job {job.id} copy {i+1} failed: {task.exception()}")
-                    copy_status[i] = "❌ ошибка"
+                    copy_status[i] = _t("worker_error", lang)
 
             job.status = JobStatus.DONE
 
             # Для 5+ копий — отправляем порциями (zip'ы до 49MB)
             if copies >= 5 and self._bot and completed_paths:
                 await self._bot.edit_message_text(
-                    text=f"📦 <b>Отправляю {len(completed_paths)} файлов…</b>",
+                    text=_t("worker_sending", lang, n=len(completed_paths)),
                     chat_id=job.chat_id,
                     message_id=job.message_id,
                     parse_mode="HTML",
                 )
-                hash_note = "✅ Все хеши уникальны" if all_hashes_unique else "⚠️ Часть хешей совпала"
-                var_note = f"±{variation}%" if variation > 0 else "выкл"
+                hash_note = _t("worker_all_unique", lang) if all_hashes_unique else _t("worker_some_same", lang)
+                var_note = f"±{variation}%" if variation > 0 else _t("worker_var_off", lang)
 
                 # Split into chunks that fit under Telegram limit
                 zip_paths = await _create_chunked_zips(completed_paths, job.id, TG_MAX_FILE_SIZE)
@@ -373,16 +370,12 @@ class VideoQueue:
                             logger.error(f"Zip chunk {zi+1} still too large: {zip_size}")
                             send_failed = True
                             continue
-                        part_label = f" (часть {zi+1}/{len(zip_paths)})" if len(zip_paths) > 1 else ""
+                        part_label = _t("worker_part_label", lang, i=zi+1, n=len(zip_paths)) if len(zip_paths) > 1 else ""
                         doc = FSInputFile(path=zp, filename=f"uniqueluzer_{len(completed_paths)}copies{part_label}.zip")
                         await self._bot.send_document(
                             chat_id=job.chat_id,
                             document=doc,
-                            caption=(
-                                f"✅ <b>Готово! {len(completed_paths)} копий</b>{part_label}\n"
-                                f"{hash_note}\n"
-                                f"Разброс параметров: {var_note}"
-                            ),
+                            caption=_t("worker_zip_done", lang, n=len(completed_paths), part=part_label, hash_note=hash_note, var=var_note),
                             parse_mode="HTML",
                         )
                         sent_count += 1
@@ -393,7 +386,6 @@ class VideoQueue:
                         _safe_remove(zp)
 
                 if sent_count == 0 and completed_paths:
-                    # All zips failed to send — try sending files individually
                     send_failed = True
                     logger.warning(f"Job {job.id}: all zips failed, falling back to individual files")
                     for fi, fp in enumerate(completed_paths):
@@ -406,10 +398,10 @@ class VideoQueue:
                             await self._bot.send_document(
                                 chat_id=job.chat_id,
                                 document=doc,
-                                caption=f"📦 Копия {fi+1}/{len(completed_paths)}",
+                                caption=_t("worker_copy_of", lang, i=fi+1, n=len(completed_paths)),
                                 parse_mode="HTML",
                             )
-                            send_failed = False  # at least some sent
+                            send_failed = False
                         except Exception:
                             pass
 
@@ -417,14 +409,8 @@ class VideoQueue:
             if self._bot:
                 try:
                     if send_failed:
-                        # Don't delete progress — show warning
                         await self._bot.edit_message_text(
-                            text=(
-                                f"⚠️ <b>Обработка завершена, но не все файлы удалось отправить</b>\n"
-                                f"Обработано: {len(completed_paths)}/{copies}\n"
-                                f"Проблема: файл(ы) превышают лимит ({TG_MAX_FILE_SIZE // (1024*1024)} МБ) или ошибка сети.\n"
-                                f"Попробуйте уменьшить количество копий."
-                            ),
+                            text=_t("worker_send_failed", lang, done=len(completed_paths), total=copies),
                             chat_id=job.chat_id,
                             message_id=job.message_id,
                             parse_mode="HTML",
@@ -444,7 +430,7 @@ class VideoQueue:
             if self._bot:
                 try:
                     await self._bot.edit_message_text(
-                        text=f"❌ <b>Ошибка обработки:</b>\n{e}",
+                        text=_t("err_processing", lang, e=str(e)),
                         chat_id=job.chat_id,
                         message_id=job.message_id,
                         parse_mode="HTML",
@@ -459,7 +445,7 @@ class VideoQueue:
             if self._bot:
                 try:
                     await self._bot.edit_message_text(
-                        text=f"❌ <b>Неожиданная ошибка:</b>\n{str(e)[:300]}",
+                        text=_t("err_unexpected", lang, e=str(e)[:300]),
                         chat_id=job.chat_id,
                         message_id=job.message_id,
                         parse_mode="HTML",
@@ -536,20 +522,20 @@ def _make_bar(pct: float, width: int = 20) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
-def _stage_label(pct: float, msg: str) -> str:
+def _stage_label(pct: float, msg: str, lang: str = "en") -> str:
     """Human-readable stage description based on progress."""
     if msg:
         return f"<i>{msg}</i>"
     if pct < 0.05:
-        return "<i>🔍 Анализирую видео…</i>"
+        return _t("stage_analyse", lang)
     elif pct < 0.10:
-        return "<i>📋 Составляю план обработки…</i>"
+        return _t("stage_plan", lang)
     elif pct < 0.80:
-        return "<i>⚙️ Применяю методы уникализации…</i>"
+        return _t("stage_process", lang)
     elif pct < 0.95:
-        return "<i>🔬 Финальная обработка…</i>"
+        return _t("stage_final", lang)
     else:
-        return "<i>✅ Завершаю…</i>"
+        return _t("stage_done", lang)
 
 
 async def _cleanup_job(jobs: dict, job_id: str, delay: int) -> None:

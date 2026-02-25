@@ -445,8 +445,115 @@ _STRINGS: dict[str, dict[str, str]] = {
     "preset_not_found": {"en": "❌ Preset not found.", "ru": "❌ Пресет не найден."},
     "preset_deleted": {"en": "🗑 Preset «{name}» deleted.", "ru": "🗑 Пресет «{name}» удалён."},
     "preset_save_prompt": {
-        "en": "💾 <b>Save preset</b>\n\nEnter a name for this preset:",
-        "ru": "💾 <b>Сохранение пресета</b>\n\nВведите название для пресета:",
+        "en": "💾 <b>Save preset</b>\n\nEnter a name for this preset (up to 20 chars):",
+        "ru": "💾 <b>Сохранение пресета</b>\n\nВведите название для пресета (до 20 символов):",
+    },
+    "preset_saved": {
+        "en": "✅ Preset «<b>{name}</b>» saved! ({active} methods)",
+        "ru": "✅ Пресет «<b>{name}</b>» сохранён! ({active} методов)",
+    },
+    "preset_name_empty": {
+        "en": "❌ Name cannot be empty.",
+        "ru": "❌ Название не может быть пустым.",
+    },
+    "preset_unknown": {
+        "en": "❌ Unknown preset.",
+        "ru": "❌ Неизвестный пресет.",
+    },
+    "template_not_found": {
+        "en": "❌ Template not found.",
+        "ru": "❌ Шаблон не найден.",
+    },
+    "preset_applied_inline": {
+        "en": "\n\n{emoji} Applied: <b>{label}</b> ({active} methods)",
+        "ru": "\n\n{emoji} Применён: <b>{label}</b> ({active} методов)",
+    },
+    "template_applied_inline": {
+        "en": "\n\n{emoji} Applied template: <b>{name}</b>\n<i>{desc}</i>\nActive methods: {active}",
+        "ru": "\n\n{emoji} Применён шаблон: <b>{name}</b>\n<i>{desc}</i>\nАктивных методов: {active}",
+    },
+    "btn_delete_preset": {"en": "🗑 delete", "ru": "🗑 удалить"},
+    "hdr_levels": {"en": "── Uniqualization levels ──", "ru": "── Уровни уникализации ──"},
+    "hdr_templates": {"en": "── Specialized templates ──", "ru": "── Специализированные шаблоны ──"},
+    "hdr_my_presets": {"en": "── My presets ──", "ru": "── Мои пресеты ──"},
+
+    # Preset names
+    "preset_light":      {"en": "Light",      "ru": "Лёгкая"},
+    "preset_medium":     {"en": "Medium",     "ru": "Средняя"},
+    "preset_iphone":     {"en": "iPhone",     "ru": "iPhone"},
+    "preset_aggressive": {"en": "Aggressive", "ru": "Агрессивная"},
+    "preset_maximum":    {"en": "Maximum",    "ru": "Максимальная"},
+
+    # Preset descriptions
+    "preset_light_desc":      {"en": "~11 methods — invisible to eye",         "ru": "~11 методов — незаметно глазу"},
+    "preset_medium_desc":     {"en": "~19 methods — optimal balance",          "ru": "~19 методов — оптимальный баланс"},
+    "preset_iphone_desc":     {"en": "~15 methods — like iPhone processing ⭐", "ru": "~15 методов — как обработка на айфоне ⭐"},
+    "preset_aggressive_desc": {"en": "~38 methods — maximum uniqueness",       "ru": "~38 методов — максимальная уникальность"},
+    "preset_maximum_desc":    {"en": "all 70 methods — full processing",       "ru": "все 70 методов — полная обработка"},
+
+    # Template names
+    "tpl_codec_name":          {"en": "Encoding only",             "ru": "Только кодирование"},
+    "tpl_visual_name":         {"en": "Visual only",               "ru": "Только визуал"},
+    "tpl_audio_name":          {"en": "Audio only",                "ru": "Только аудио"},
+    "tpl_meta_name":           {"en": "Metadata only",             "ru": "Только метаданные"},
+    "tpl_soft_name":           {"en": "Soft (no artifacts)",       "ru": "Мягкая (без артефактов)"},
+    "tpl_full_noaudio_name":   {"en": "Visual + codec (no audio)", "ru": "Визуал + кодек (без аудио)"},
+
+    # Template descriptions
+    "tpl_codec_desc":        {"en": "Changes codec, bitrate and metadata — no picture/sound changes.\nFile looks identical but has a different hash.", "ru": "Меняет кодек, битрейт и метаданные — без изменения картинки и звука.\nФайл визуально идентичен, но имеет другой хеш."},
+    "tpl_visual_desc":       {"en": "Color, geometry, sharpness, noise — no audio or codec changes.\nAudio track stays untouched.", "ru": "Цвет, геометрия, резкость, шум — без изменения звука и кодека.\nАудиодорожка остаётся нетронутой."},
+    "tpl_audio_desc":        {"en": "Changes only the audio track: pitch, EQ, loudness.\nVideo track is not touched.", "ru": "Меняет только звуковую дорожку: тон, эквалайзер, громкость.\nВидеодорожка не трогается."},
+    "tpl_meta_desc":         {"en": "Clears original metadata and fills with random values.\nFastest way to change the hash.", "ru": "Очищает оригинальные метаданные и заполняет случайными.\nСамый быстрый способ изменить хеш."},
+    "tpl_soft_desc":         {"en": "Only invisible changes: metadata, encoding, audio normalization.\nQuality is 100% preserved.", "ru": "Только незаметные изменения: метаданные, кодирование, нормализация звука.\nКачество на 100% сохраняется."},
+    "tpl_full_noaudio_desc": {"en": "All visual methods + encoding, but audio is not touched.", "ru": "Все визуальные методы + кодирование, но аудио не трогается."},
+
+    # Custom copies
+    "custom_copies_prompt": {
+        "en": "✏️ Enter number of copies (1–999):",
+        "ru": "✏️ Введите количество копий (1–999):",
+    },
+    "custom_copies_invalid": {
+        "en": "❌ Enter a number from 1 to 999.",
+        "ru": "❌ Введите число от 1 до 999.",
+    },
+
+    # Worker progress messages
+    "worker_processing": {
+        "en": "⚙️ <b>Processing {copies}…</b>\n",
+        "ru": "⚙️ <b>Обрабатываю {copies}…</b>\n",
+    },
+    "worker_copies_word": {
+        "en": "{n} copy",
+        "ru": "{n} копию",
+    },
+    "worker_copies_word_plural": {
+        "en": "{n} copies",
+        "ru": "{n} копий",
+    },
+    "worker_waiting":   {"en": "⬜ waiting", "ru": "⬜ ожидает"},
+    "worker_starting":  {"en": "⚙️ starting…", "ru": "⚙️ запускается…"},
+    "worker_empty":     {"en": "⚠️ empty file", "ru": "⚠️ пустой файл"},
+    "worker_done":      {"en": "✅ done  <code>{h}…</code>", "ru": "✅ готово  <code>{h}…</code>"},
+    "worker_error":     {"en": "❌ error", "ru": "❌ ошибка"},
+    "worker_copy_of":   {"en": "Copy {i}/{n}", "ru": "Копия {i}/{n}"},
+    "worker_hash_ok":   {"en": "✅ Hash is unique", "ru": "✅ Хеш уникален"},
+    "worker_hash_same": {"en": "⚠️ Hash matched", "ru": "⚠️ Хеш совпал"},
+    "worker_sending":   {"en": "📦 <b>Sending {n} files…</b>", "ru": "📦 <b>Отправляю {n} файлов…</b>"},
+    "worker_all_unique": {"en": "✅ All hashes unique", "ru": "✅ Все хеши уникальны"},
+    "worker_some_same":  {"en": "⚠️ Some hashes matched", "ru": "⚠️ Часть хешей совпала"},
+    "worker_var_off":    {"en": "off", "ru": "выкл"},
+    "worker_zip_done": {
+        "en": "✅ <b>Done! {n} copies</b>{part}\n{hash_note}\nVariation: {var}",
+        "ru": "✅ <b>Готово! {n} копий</b>{part}\n{hash_note}\nРазброс параметров: {var}",
+    },
+    "worker_part_label": {"en": " (part {i}/{n})", "ru": " (часть {i}/{n})"},
+    "worker_too_big": {
+        "en": "⚠️ Copy {i} is too large ({size} MB > {limit} MB limit).\nFile processed but cannot be sent.",
+        "ru": "⚠️ Копия {i} слишком большая ({size} МБ > {limit} МБ лимит).\nФайл обработан, но не может быть отправлен.",
+    },
+    "worker_send_failed": {
+        "en": "⚠️ <b>Processing complete, but some files could not be sent</b>\nProcessed: {done}/{total}\nFiles exceed size limit or network error.\nTry fewer copies.",
+        "ru": "⚠️ <b>Обработка завершена, но не все файлы удалось отправить</b>\nОбработано: {done}/{total}\nФайл(ы) превышают лимит или ошибка сети.\nПопробуйте уменьшить количество копий.",
     },
 
     # ── Stage labels ───────────────────────────────────────────────────────────

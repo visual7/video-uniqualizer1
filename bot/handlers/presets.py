@@ -1,5 +1,5 @@
 """
-Preset selection handler — стандартные пресеты + специализированные шаблоны.
+Preset selection handler — presets + specialized templates.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
 )
 
+from bot.i18n import t
 from bot.models.user_settings import UserSettings
 from bot.processors.methods import PRESETS, ALL_METHODS
 
@@ -18,66 +19,55 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-# ── Стандартные пресеты ────────────────────────────────────────────────────────
+# ── Preset keys & emojis (language-independent) ──────────────────────────────
 
-PRESET_INFO = {
-    "light":      ("🟢", "Лёгкая",      "~11 методов — незаметно глазу"),
-    "medium":     ("🟡", "Средняя",     "~19 методов — оптимальный баланс"),
-    "iphone":     ("📱", "iPhone",      "~15 методов — как обработка на айфоне ⭐"),
-    "aggressive": ("🟠", "Агрессивная", "~38 методов — максимальная уникальность"),
-    "maximum":    ("🔴", "Максимальная","все 70 методов — полная обработка"),
+PRESET_KEYS = ["light", "medium", "iphone", "aggressive", "maximum"]
+PRESET_EMOJI = {
+    "light": "🟢", "medium": "🟡", "iphone": "📱",
+    "aggressive": "🟠", "maximum": "🔴",
 }
 
 
-# ── Специализированные шаблоны ─────────────────────────────────────────────────
-# Каждый шаблон определяет: какие категории включить (остальные выключены)
-# Формат: {template_id: (emoji, name, description, enabled_categories)}
+def _preset_name(key: str, lang: str) -> str:
+    return t(f"preset_{key}", lang)
+
+
+def _preset_desc(key: str, lang: str) -> str:
+    return t(f"preset_{key}_desc", lang)
+
+
+# ── Specialized templates ─────────────────────────────────────────────────────
 
 TEMPLATE_DEFS = {
-    "tpl_codec": (
-        "🔧", "Только кодирование",
-        "Меняет кодек, битрейт и метаданные — без изменения картинки и звука.\n"
-        "Файл визуально идентичен, но имеет другой хеш.",
-        {7},  # только категория 7 (кодирование)
-    ),
-    "tpl_visual": (
-        "🎨", "Только визуал",
-        "Цвет, геометрия, резкость, шум — без изменения звука и кодека.\n"
-        "Аудиодорожка остаётся нетронутой.",
-        {1, 2, 3, 4, 8, 9},
-    ),
-    "tpl_audio": (
-        "🔊", "Только аудио",
-        "Меняет только звуковую дорожку: тон, эквалайзер, громкость.\n"
-        "Видеодорожка не трогается.",
-        {6},
-    ),
-    "tpl_meta": (
-        "🏷",  "Только метаданные",
-        "Очищает оригинальные метаданные и заполняет случайными.\n"
-        "Самый быстрый способ изменить хеш.",
-        {7},  # только методы 50 и 51 из категории 7
-    ),
-    "tpl_soft": (
-        "🕊",  "Мягкая (без артефактов)",
-        "Только незаметные изменения: метаданные, кодирование, нормализация звука.\n"
-        "Качество на 100% сохраняется.",
-        {6, 7},
-    ),
-    "tpl_full_noaudio": (
-        "🎬", "Визуал + кодек (без аудио)",
-        "Все визуальные методы + кодирование, но аудио не трогается.",
-        {1, 2, 3, 4, 5, 7, 8, 9},
-    ),
+    "tpl_codec":        ("🔧", {7}),
+    "tpl_visual":       ("🎨", {1, 2, 3, 4, 8, 9}),
+    "tpl_audio":        ("🔊", {6}),
+    "tpl_meta":         ("🏷",  {7}),       # special: only methods 50, 51
+    "tpl_soft":         ("🕊",  {6, 7}),
+    "tpl_full_noaudio": ("🎬", {1, 2, 3, 4, 5, 7, 8, 9}),
 }
+
+
+def _tpl_name(tpl_id: str, lang: str) -> str:
+    return t(f"{tpl_id}_name", lang)
+
+
+def _tpl_desc(tpl_id: str, lang: str) -> str:
+    return t(f"{tpl_id}_desc", lang)
+
+
+def _tpl_emoji(tpl_id: str) -> str:
+    return TEMPLATE_DEFS[tpl_id][0]
+
+
+def _tpl_cats(tpl_id: str) -> set:
+    return TEMPLATE_DEFS[tpl_id][1]
 
 
 def _build_template_settings(template_id: str) -> dict:
-    """Возвращает dict {method_id: {enabled, intensity, frequency}} для шаблона."""
-    _, _, _, enabled_cats = TEMPLATE_DEFS[template_id]
+    """Returns dict {method_id: {enabled, intensity, frequency}} for a template."""
+    enabled_cats = _tpl_cats(template_id)
     result = {}
-
-    # Особый случай: tpl_meta — только методы 50 (clear meta) и 51 (new meta)
     meta_only = template_id == "tpl_meta"
 
     for m in ALL_METHODS:
@@ -96,130 +86,152 @@ def _build_template_settings(template_id: str) -> dict:
 
 # ── Keyboards ─────────────────────────────────────────────────────────────────
 
-def kb_presets(custom_names: list[str] | None = None) -> InlineKeyboardMarkup:
+def kb_presets(lang: str, custom_names: list[str] | None = None) -> InlineKeyboardMarkup:
     rows = []
 
-    # Стандартные пресеты
-    rows.append([InlineKeyboardButton(text="── Уровни уникализации ──", callback_data="pre_noop")])
-    for key, (emoji, label, desc) in PRESET_INFO.items():
+    # Standard presets
+    rows.append([InlineKeyboardButton(text=t("hdr_levels", lang), callback_data="pre_noop")])
+    for key in PRESET_KEYS:
+        emoji = PRESET_EMOJI[key]
+        label = _preset_name(key, lang)
+        desc = _preset_desc(key, lang)
         rows.append([InlineKeyboardButton(
             text=f"{emoji}  {label}  —  {desc}",
             callback_data=f"pre_apply_{key}",
         )])
 
-    # Специализированные шаблоны
-    rows.append([InlineKeyboardButton(text="── Специализированные шаблоны ──", callback_data="pre_noop")])
-    for tpl_id, (emoji, name, _, _cats) in TEMPLATE_DEFS.items():
+    # Specialized templates
+    rows.append([InlineKeyboardButton(text=t("hdr_templates", lang), callback_data="pre_noop")])
+    for tpl_id in TEMPLATE_DEFS:
+        emoji = _tpl_emoji(tpl_id)
+        name = _tpl_name(tpl_id, lang)
         rows.append([InlineKeyboardButton(
             text=f"{emoji}  {name}",
             callback_data=f"pre_tpl_{tpl_id}",
         )])
 
-    # Пользовательские пресеты
+    # Custom presets
     if custom_names:
-        rows.append([InlineKeyboardButton(text="── Мои пресеты ──", callback_data="pre_noop")])
+        rows.append([InlineKeyboardButton(text=t("hdr_my_presets", lang), callback_data="pre_noop")])
         for name in custom_names[:5]:
             rows.append([
-                InlineKeyboardButton(text=f"🔖 {name}",     callback_data=f"pre_apply_c_{name[:20]}"),
-                InlineKeyboardButton(text="🗑 удалить",     callback_data=f"pre_del_{name[:20]}"),
+                InlineKeyboardButton(text=f"🔖 {name}",               callback_data=f"pre_apply_c_{name[:20]}"),
+                InlineKeyboardButton(text=t("btn_delete_preset", lang), callback_data=f"pre_del_{name[:20]}"),
             ])
 
-    rows.append([InlineKeyboardButton(text="💾 Сохранить текущие настройки как пресет", callback_data="pre_save")])
-    rows.append([InlineKeyboardButton(text="◀️ К настройкам", callback_data="s_main")])
+    rows.append([InlineKeyboardButton(text=t("btn_save_preset", lang), callback_data="pre_save")])
+    rows.append([InlineKeyboardButton(text=t("btn_back_settings", lang), callback_data="s_main")])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _presets_text() -> str:
-    lines = ["🎨 <b>Пресеты и шаблоны уникализации</b>\n"]
+def _presets_text(lang: str) -> str:
+    lines = [t("presets_title", lang)]
 
-    lines.append("<b>Уровни уникализации:</b>")
-    for key, (emoji, label, desc) in PRESET_INFO.items():
+    lines.append(t("presets_levels", lang))
+    for key in PRESET_KEYS:
+        emoji = PRESET_EMOJI[key]
+        label = _preset_name(key, lang)
+        desc = _preset_desc(key, lang)
         lines.append(f"{emoji} <b>{label}</b> — {desc}")
 
-    lines.append("\n<b>Специализированные шаблоны:</b>")
-    for tpl_id, (emoji, name, desc, _cats) in TEMPLATE_DEFS.items():
-        short_desc = desc.split("\n")[0]
-        lines.append(f"{emoji} <b>{name}</b>\n<i>{short_desc}</i>")
+    lines.append(t("presets_templates", lang))
+    for tpl_id in TEMPLATE_DEFS:
+        emoji = _tpl_emoji(tpl_id)
+        name = _tpl_name(tpl_id, lang)
+        desc = _tpl_desc(tpl_id, lang).split("\n")[0]
+        lines.append(f"{emoji} <b>{name}</b>\n<i>{desc}</i>")
 
     return "\n".join(lines)
 
 
-# ── Команды ───────────────────────────────────────────────────────────────────
+# ── Commands ─────────────────────────────────────────────────────────────────
 
 @router.message(Command("preset"))
 async def cmd_preset(message: Message):
     s = UserSettings.load(message.from_user.id)
+    lang = s.language
     custom_names = list(s.custom_presets.keys())
     await message.answer(
-        _presets_text(),
+        _presets_text(lang),
         parse_mode="HTML",
-        reply_markup=kb_presets(custom_names),
+        reply_markup=kb_presets(lang, custom_names),
     )
 
 
 @router.callback_query(F.data == "pre_menu")
 async def cb_preset_menu(cb: CallbackQuery):
     s = UserSettings.load(cb.from_user.id)
+    lang = s.language
     custom_names = list(s.custom_presets.keys())
     await cb.message.edit_text(
-        _presets_text(),
+        _presets_text(lang),
         parse_mode="HTML",
-        reply_markup=kb_presets(custom_names),
+        reply_markup=kb_presets(lang, custom_names),
     )
     await cb.answer()
 
 
-# ── Применение стандартного пресета ──────────────────────────────────────────
+# ── Apply custom preset ──────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("pre_apply_c_"))
 async def cb_apply_custom(cb: CallbackQuery):
     name = cb.data[len("pre_apply_c_"):]
     s    = UserSettings.load(cb.from_user.id)
+    lang = s.language
     if name not in s.custom_presets:
-        await cb.answer("❌ Пресет не найден.", show_alert=True)
+        await cb.answer(t("preset_not_found", lang), show_alert=True)
         return
     s.apply_preset(name)
     s.save()
     active = sum(1 for ms in s.methods.values() if ms.enabled)
-    await cb.answer(f"✅ Пресет «{name}» применён! Активных методов: {active}")
+    await cb.answer(t("preset_applied", lang, emoji="✅", label=name, active=active))
 
+
+# ── Apply standard preset ────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("pre_apply_"))
 async def cb_apply_preset(cb: CallbackQuery):
     key = cb.data[len("pre_apply_"):]
     if key not in PRESETS:
-        await cb.answer("❌ Неизвестный пресет.", show_alert=True)
+        s = UserSettings.load(cb.from_user.id)
+        await cb.answer(t("preset_unknown", s.language), show_alert=True)
         return
     s = UserSettings.load(cb.from_user.id)
+    lang = s.language
     s.apply_preset(key)
     s.save()
-    emoji, label, _ = PRESET_INFO[key]
+    emoji = PRESET_EMOJI[key]
+    label = _preset_name(key, lang)
     active = sum(1 for ms in s.methods.values() if ms.enabled)
-    await cb.answer(f"{emoji} Пресет «{label}» применён! Активных: {active}")
+    await cb.answer(t("preset_applied", lang, emoji=emoji, label=label, active=active))
 
     custom_names = list(s.custom_presets.keys())
     try:
         await cb.message.edit_text(
-            _presets_text() + f"\n\n{emoji} Применён: <b>{label}</b> ({active} методов)",
+            _presets_text(lang) + t("preset_applied_inline", lang, emoji=emoji, label=label, active=active),
             parse_mode="HTML",
-            reply_markup=kb_presets(custom_names),
+            reply_markup=kb_presets(lang, custom_names),
         )
     except Exception:
         pass
 
 
-# ── Применение специализированного шаблона ────────────────────────────────────
+# ── Apply specialized template ───────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("pre_tpl_"))
 async def cb_apply_template(cb: CallbackQuery):
     tpl_id = cb.data[len("pre_tpl_"):]
     if tpl_id not in TEMPLATE_DEFS:
-        await cb.answer("❌ Шаблон не найден.", show_alert=True)
+        s = UserSettings.load(cb.from_user.id)
+        await cb.answer(t("template_not_found", s.language), show_alert=True)
         return
 
-    emoji, name, desc, _cats = TEMPLATE_DEFS[tpl_id]
     s = UserSettings.load(cb.from_user.id)
+    lang = s.language
+    emoji = _tpl_emoji(tpl_id)
+    name = _tpl_name(tpl_id, lang)
+    desc = _tpl_desc(tpl_id, lang)
 
     # Apply template
     cfg = _build_template_settings(tpl_id)
@@ -228,50 +240,50 @@ async def cb_apply_template(cb: CallbackQuery):
     s.save()
 
     active = sum(1 for ms in s.methods.values() if ms.enabled)
-    await cb.answer(f"{emoji} Шаблон «{name}» применён! Активных: {active}")
+    await cb.answer(t("template_applied", lang, emoji=emoji, name=name, active=active))
 
     custom_names = list(s.custom_presets.keys())
+    short_desc = desc.split("\n")[0]
     try:
         await cb.message.edit_text(
-            _presets_text() + f"\n\n{emoji} Применён шаблон: <b>{name}</b>\n<i>{desc.split(chr(10))[0]}</i>\nАктивных методов: {active}",
+            _presets_text(lang) + t("template_applied_inline", lang, emoji=emoji, name=name, desc=short_desc, active=active),
             parse_mode="HTML",
-            reply_markup=kb_presets(custom_names),
+            reply_markup=kb_presets(lang, custom_names),
         )
     except Exception:
         pass
 
 
-# ── Удаление пресета ──────────────────────────────────────────────────────────
+# ── Delete preset ────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("pre_del_"))
 async def cb_delete_preset(cb: CallbackQuery):
     name = cb.data[len("pre_del_"):]
     s    = UserSettings.load(cb.from_user.id)
+    lang = s.language
     s.delete_custom_preset(name)
     custom_names = list(s.custom_presets.keys())
     try:
         await cb.message.edit_text(
-            _presets_text(),
+            _presets_text(lang),
             parse_mode="HTML",
-            reply_markup=kb_presets(custom_names),
+            reply_markup=kb_presets(lang, custom_names),
         )
     except Exception:
-        await cb.message.edit_reply_markup(reply_markup=kb_presets(custom_names))
-    await cb.answer(f"🗑 Пресет «{name}» удалён.")
+        await cb.message.edit_reply_markup(reply_markup=kb_presets(lang, custom_names))
+    await cb.answer(t("preset_deleted", lang, name=name))
 
 
-# ── Сохранение пресета ────────────────────────────────────────────────────────
+# ── Save preset ──────────────────────────────────────────────────────────────
 
 _awaiting_preset_name: dict[int, bool] = {}   # user_id → True when waiting for name
 
 @router.callback_query(F.data == "pre_save")
 async def cb_save_preset(cb: CallbackQuery):
+    s = UserSettings.load(cb.from_user.id)
+    lang = s.language
     _awaiting_preset_name[cb.from_user.id] = True
-    await cb.message.answer(
-        "💾 <b>Сохранение пресета</b>\n\n"
-        "Введите название для пресета (до 20 символов):",
-        parse_mode="HTML",
-    )
+    await cb.message.answer(t("preset_save_prompt", lang), parse_mode="HTML")
     await cb.answer()
 
 
@@ -282,21 +294,22 @@ async def on_preset_name_typed(message: Message):
         return  # not waiting for preset name, skip
     del _awaiting_preset_name[uid]
 
+    s = UserSettings.load(uid)
+    lang = s.language
+
     name = message.text.strip()[:20]
     if not name:
-        await message.reply("❌ Название не может быть пустым.")
+        await message.reply(t("preset_name_empty", lang))
         return
 
-    s = UserSettings.load(uid)
     s.save_custom_preset(name)
 
     custom_names = list(s.custom_presets.keys())
     active = sum(1 for ms in s.methods.values() if ms.enabled)
     await message.answer(
-        f"✅ Пресет «<b>{name}</b>» сохранён! ({active} методов)\n\n"
-        + _presets_text(),
+        t("preset_saved", lang, name=name, active=active) + "\n\n" + _presets_text(lang),
         parse_mode="HTML",
-        reply_markup=kb_presets(custom_names),
+        reply_markup=kb_presets(lang, custom_names),
     )
 
 

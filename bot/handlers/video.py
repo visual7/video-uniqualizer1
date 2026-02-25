@@ -34,8 +34,8 @@ URL_REGEX = re.compile(
     re.IGNORECASE,
 )
 
-# Copy count options
-COPY_OPTIONS = [1, 2, 3, 5, 10, 25, 50, 100]
+# Copy count options (quick buttons)
+COPY_OPTIONS = [1, 2, 3, 5, 10, 20, 25, 50, 100]
 
 # Intensity variation options (%)
 VARIATION_OPTIONS = [0, 5, 10, 20]  # 0 = no variation
@@ -59,6 +59,7 @@ QUICK_METHODS_RU = {
 
 _pending_videos: dict[str, dict] = {}    # vid_id → {path, info, user_id}
 _user_latest_vid: dict[int, str] = {}   # user_id → latest vid_id (for "back to card")
+_awaiting_copies: dict[int, tuple[str, int]] = {}  # user_id → (vid_id, variation)
 
 
 async def _download_tg_file(bot: Bot, file_id: str, dest: str) -> None:
@@ -142,12 +143,19 @@ def _video_card_kb(vid_id: str, lang: str, copies: int = 1, variation: int = 0) 
     # Copies selector
     copy_row = []
     for n in COPY_OPTIONS:
-        label = f"{'▸' if n == copies else ''}{n}×"
+        is_sel = n == copies
+        label = f"{'▸' if is_sel else ''}{n}×"
         copy_row.append(InlineKeyboardButton(text=label, callback_data=f"vc_{vid_id}_{n}_{variation}"))
-    # Split into two rows if needed
-    rows.append(copy_row[:4])
-    if len(copy_row) > 4:
-        rows.append(copy_row[4:])
+    # Show selected custom value if not in COPY_OPTIONS
+    custom_sel = copies not in COPY_OPTIONS
+    copy_row.append(InlineKeyboardButton(
+        text=f"{'▸' if custom_sel else ''}✏️" + (f"{copies}×" if custom_sel else ""),
+        callback_data=f"vcx_{vid_id}_{variation}",
+    ))
+    # Split into rows of 5
+    rows.append(copy_row[:5])
+    if len(copy_row) > 5:
+        rows.append(copy_row[5:])
 
     # Variation selector (only when copies > 1)
     if copies > 1:
@@ -466,6 +474,59 @@ async def cb_variation(cb: CallbackQuery):
     kb = _video_card_kb(vid_id, lang, copies=copies, variation=variation)
     await cb.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
     await cb.answer()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Callback — Custom copy count
+# ════════════════════════════════════════════════════════════════════════════
+
+@router.callback_query(F.data.startswith("vcx_"))
+async def cb_custom_copies(cb: CallbackQuery):
+    # vcx_{vid_id}_{variation}
+    parts = cb.data.split("_")
+    vid_id = parts[1]
+    variation = int(parts[2])
+    user_id = cb.from_user.id
+    s = UserSettings.load(user_id)
+    lang = s.language
+
+    pending = _pending_videos.get(vid_id)
+    if not pending:
+        await cb.answer(t("file_expired", lang), show_alert=True)
+        return
+
+    _awaiting_copies[user_id] = (vid_id, variation)
+    await cb.message.answer(t("custom_copies_prompt", lang))
+    await cb.answer()
+
+
+@router.message(F.text.regexp(r"^\d+$"))
+async def on_custom_copies_typed(message: Message):
+    uid = message.from_user.id
+    if uid not in _awaiting_copies:
+        return
+    vid_id, variation = _awaiting_copies.pop(uid)
+    s = UserSettings.load(uid)
+    lang = s.language
+
+    pending = _pending_videos.get(vid_id)
+    if not pending:
+        await message.answer(t("file_expired", lang))
+        return
+
+    copies = int(message.text)
+    if copies < 1 or copies > 999:
+        await message.answer(t("custom_copies_invalid", lang))
+        return
+
+    text = _video_card_text(s, lang, pending["info"])
+    if copies > 1:
+        var_str = t("variation_val", lang, v=variation) if variation > 0 else ""
+        total_est = _estimate_time(pending["info"]["duration"] * copies, len(s.get_active_methods()))
+        text += t("video_batch", lang, copies=copies, var=var_str, total=total_est)
+
+    kb = _video_card_kb(vid_id, lang, copies=copies, variation=variation)
+    await message.answer(text, parse_mode="HTML", reply_markup=kb)
 
 
 # ════════════════════════════════════════════════════════════════════════════

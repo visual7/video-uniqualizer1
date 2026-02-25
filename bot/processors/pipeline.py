@@ -367,9 +367,10 @@ def _safe_remove(path: str) -> None:
         pass
 
 
-def build_report(result: dict) -> str:
+def build_report(result: dict, lang: str = "ru") -> str:
     """Builds a human-readable result report."""
     from bot.processors.methods import ALL_METHODS, CATEGORY_NAMES
+    from bot.i18n import t, cat_name as _cat_name
 
     applied = result["applied"]
     n       = len(applied)
@@ -391,36 +392,34 @@ def build_report(result: dict) -> str:
     # Build category summary
     cat_lines = []
     for cat_id in sorted(method_by_cat):
-        emoji, cat_name = CATEGORY_NAMES.get(cat_id, ("•", "Прочее"))
+        emoji, _ = CATEGORY_NAMES.get(cat_id, ("•", "Other"))
+        cname = _cat_name(cat_id, lang)
         names = method_by_cat[cat_id]
-        cat_lines.append(f"  {emoji} {cat_name}: {len(names)}")
+        cat_lines.append(f"  {emoji} {cname}: {len(names)}")
 
-    cat_block = "\n".join(cat_lines) if cat_lines else "  нет"
+    cat_block = "\n".join(cat_lines) if cat_lines else "  —"
 
     # Duration formatting
-    dur_str = f"{dur:.1f} сек" if dur < 60 else f"{dur/60:.1f} мин"
+    dur_str = f"{dur:.1f}s" if lang == "en" else f"{dur:.1f} сек"
+    if dur >= 60:
+        dur_str = f"{dur/60:.1f}m" if lang == "en" else f"{dur/60:.1f} мин"
 
     # Size change
     size_diff = out_sz - in_sz
     size_arrow = f"↑{abs(size_diff):.1f}" if size_diff > 0.1 else (
                  f"↓{abs(size_diff):.1f}" if size_diff < -0.1 else "≈")
 
-    # Hash verification
-    hash_line = (
-        "✅ Файл уникален — хеш отличается от оригинала"
-        if hashes_differ else
-        "⚠️ Хеш совпадает с оригиналом"
-    )
+    hash_line = t("report_hash_ok", lang) if hashes_differ else t("report_hash_same", lang)
 
     return (
-        f"✅ <b>Готово! Видео уникализировано</b>\n\n"
-        f"{hash_line}\n\n"
-        f"<b>Применено методов: {n}</b>\n"
-        f"{cat_block}\n\n"
-        f"📦 Размер: {in_sz:.1f} МБ → {out_sz:.1f} МБ ({size_arrow} МБ)\n"
-        f"⏱ Время: {dur_str}\n"
-        f"🔑 Seed: <code>{seed}</code>\n\n"
-        f"<b>Хеш-суммы:</b>\n"
-        f"<code>Было:  {in_md5[:16]}…</code>\n"
-        f"<code>Стало: {out_md5[:16]}…</code>"
+        t("report_title", lang)
+        + f"{hash_line}\n"
+        + t("report_methods", lang, n=n)
+        + f"{cat_block}\n\n"
+        + t("report_size", lang, in_sz=f"{in_sz:.1f}", out_sz=f"{out_sz:.1f}", diff=f"{size_arrow}")
+        + t("report_time", lang, dur=dur_str)
+        + t("report_seed", lang, seed=seed)
+        + t("report_hashes", lang)
+        + t("report_hash_before", lang, h=in_md5[:16])
+        + t("report_hash_after", lang, h=out_md5[:16])
     )
