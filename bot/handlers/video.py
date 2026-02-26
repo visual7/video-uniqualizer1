@@ -18,7 +18,7 @@ from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
 )
 
-from bot.config import TEMP_DIR, MAX_FILE_SIZE, SUPPORTED_EXTENSIONS, LOCAL_API_URL
+from bot.config import TEMP_DIR, MAX_FILE_SIZE, MAX_USER_QUEUE, SUPPORTED_EXTENSIONS, LOCAL_API_URL
 from bot.i18n import t
 from bot.models.user_settings import UserSettings
 from bot.queue_worker.worker import queue, JobStatus
@@ -191,9 +191,10 @@ async def on_video(message: Message, bot: Bot):
         await message.answer(t("video_rate_limit", lang, sec=int(wait)))
         return
 
-    # Already processing?
-    if queue.user_has_active_job(user_id):
-        await message.answer(t("video_already_processing", lang))
+    # Queue full?
+    if queue.user_queue_full(user_id):
+        count = queue.user_active_job_count(user_id)
+        await message.answer(t("video_queue_full", lang, count=count, max=MAX_USER_QUEUE))
         return
 
     video = message.video
@@ -274,9 +275,10 @@ async def on_document(message: Message, bot: Bot):
         await message.answer(t("video_rate_limit", lang, sec=int(wait)))
         return
 
-    # Already processing?
-    if queue.user_has_active_job(user_id):
-        await message.answer(t("video_already_processing", lang))
+    # Queue full?
+    if queue.user_queue_full(user_id):
+        count = queue.user_active_job_count(user_id)
+        await message.answer(t("video_queue_full", lang, count=count, max=MAX_USER_QUEUE))
         return
 
     # Size check
@@ -344,8 +346,9 @@ async def on_video_url(message: Message, bot: Bot):
         await message.answer(t("video_rate_limit", lang, sec=int(wait)))
         return
 
-    if queue.user_has_active_job(user_id):
-        await message.answer(t("video_already_processing", lang))
+    if queue.user_queue_full(user_id):
+        count = queue.user_active_job_count(user_id)
+        await message.answer(t("video_queue_full", lang, count=count, max=MAX_USER_QUEUE))
         return
 
     status_msg = await message.answer(t("video_downloading", lang, size="?"))
@@ -561,8 +564,9 @@ async def cb_run(cb: CallbackQuery, bot: Bot):
         _pending_videos[vid_id] = pending  # restore
         return
 
-    if queue.user_has_active_job(user_id):
-        await cb.answer(t("video_already_processing", lang), show_alert=True)
+    if queue.user_queue_full(user_id):
+        count = queue.user_active_job_count(user_id)
+        await cb.answer(t("video_queue_full", lang, count=count, max=MAX_USER_QUEUE), show_alert=True)
         _pending_videos[vid_id] = pending
         return
 
@@ -583,7 +587,10 @@ async def cb_run(cb: CallbackQuery, bot: Bot):
         variation=variation,
     )
 
-    if copies > 1:
+    active_count = queue.user_active_job_count(user_id)
+    if active_count > 1:
+        await cb.answer(t("started_queued", lang, n=copies, pos=active_count))
+    elif copies > 1:
         await cb.answer(t("started_batch", lang, n=copies))
     else:
         await cb.answer(t("started", lang))

@@ -572,6 +572,40 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "Job already running — can't cancel.",
         "ru": "Задача уже обрабатывается — не отменить.",
     },
+
+    # ── Multi-video queue ──────────────────────────────────────────────────────
+    "video_queue_full": {
+        "en": "📋 <b>Queue full</b>\nYou have {count}/{max} active jobs. Wait for one to finish or /cancel.",
+        "ru": "📋 <b>Очередь заполнена</b>\nУ вас {count}/{max} активных задач. Дождитесь завершения или /cancel.",
+    },
+    "queue_title": {
+        "en": "📋 <b>Your jobs ({count})</b>\nTotal in queue: {pending}\n",
+        "ru": "📋 <b>Ваши задачи ({count})</b>\nВсего в очереди: {pending}\n",
+    },
+    "queue_job_line": {
+        "en": "{i}. {status}{copies}  <code>{job_id}</code>",
+        "ru": "{i}. {status}{copies}  <code>{job_id}</code>",
+    },
+    "btn_cancel_one": {
+        "en": "🚫 Cancel #{i}",
+        "ru": "🚫 Отменить #{i}",
+    },
+    "btn_cancel_all": {
+        "en": "🚫 Cancel all pending",
+        "ru": "🚫 Отменить все ожидающие",
+    },
+    "cancel_all_done": {
+        "en": "🚫 Cancelled {count} job(s).",
+        "ru": "🚫 Отменено задач: {count}.",
+    },
+    "cancel_one_done": {
+        "en": "🚫 Job {job_id} cancelled.",
+        "ru": "🚫 Задача {job_id} отменена.",
+    },
+    "started_queued": {
+        "en": "▶️ Queued! Making {n} copies (#{pos} in your queue)",
+        "ru": "▶️ В очереди! Делаю {n} копий (#{pos} в вашей очереди)",
+    },
 }
 
 

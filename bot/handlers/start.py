@@ -194,40 +194,63 @@ async def cmd_status(message: Message):
 async def cmd_queue(message: Message):
     s    = UserSettings.load(message.from_user.id)
     lang = s.language
-    user_job = queue.get_user_job(message.from_user.id)
-    pending  = queue.total_pending()
+    user_jobs = queue.get_user_jobs(message.from_user.id)
+    pending   = queue.total_pending()
 
-    if user_job is None:
+    if not user_jobs:
         await message.answer(t("queue_empty", lang, pending=pending))
         return
 
-    status_map = {
-        JobStatus.PENDING:    t("queue_pending", lang),
-        JobStatus.PROCESSING: t("queue_processing", lang, pct=int(user_job.progress * 100)),
-        JobStatus.DONE:       t("queue_done", lang),
-        JobStatus.FAILED:     t("queue_failed", lang),
-        JobStatus.CANCELLED:  t("queue_cancelled", lang),
-    }
-    kb = None
-    if user_job.status == JobStatus.PENDING:
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=t("btn_cancel_job", lang), callback_data="queue_cancel"),
-        ]])
-    await message.answer(
-        t("queue_job", lang, status=status_map.get(user_job.status, "?"), pending=pending),
-        parse_mode="HTML", reply_markup=kb,
-    )
+    lines = [t("queue_title", lang, count=len(user_jobs), pending=pending)]
+    buttons = []
+    has_pending = False
+
+    for i, job in enumerate(user_jobs, 1):
+        if job.status == JobStatus.PROCESSING:
+            status_str = t("queue_processing", lang, pct=int(job.progress * 100))
+        elif job.status == JobStatus.PENDING:
+            status_str = t("queue_pending", lang)
+        else:
+            status_str = "?"
+        copies_str = f" x{job.copies}" if job.copies > 1 else ""
+        lines.append(t("queue_job_line", lang, i=i, status=status_str, copies=copies_str, job_id=job.id[:6]))
+
+        if job.status == JobStatus.PENDING:
+            has_pending = True
+            buttons.append([InlineKeyboardButton(
+                text=t("btn_cancel_one", lang, i=i),
+                callback_data=f"qcancel_{job.id}",
+            )])
+
+    if has_pending and len(user_jobs) > 1:
+        buttons.append([InlineKeyboardButton(
+            text=t("btn_cancel_all", lang),
+            callback_data="qcancel_all",
+        )])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
+    await message.answer("\n".join(lines), parse_mode="HTML", reply_markup=kb)
 
 
-@router.callback_query(F.data == "queue_cancel")
+@router.callback_query(F.data.startswith("qcancel_"))
 async def cb_queue_cancel(cb: CallbackQuery):
     s    = UserSettings.load(cb.from_user.id)
     lang = s.language
-    cancelled = queue.cancel_user_job(cb.from_user.id)
-    if cancelled:
-        await cb.message.edit_text(t("cancel_done", lang))
+    data = cb.data
+
+    if data == "qcancel_all":
+        count = queue.cancel_all_user_jobs(cb.from_user.id)
+        if count:
+            await cb.message.edit_text(t("cancel_all_done", lang, count=count))
+        else:
+            await cb.answer(t("err_cancel_impossible", lang), show_alert=True)
     else:
-        await cb.answer(t("err_cancel_impossible", lang), show_alert=True)
+        job_id = data[len("qcancel_"):]
+        cancelled = queue.cancel_job(job_id, cb.from_user.id)
+        if cancelled:
+            await cb.message.edit_text(t("cancel_one_done", lang, job_id=job_id[:6]))
+        else:
+            await cb.answer(t("err_cancel_impossible", lang), show_alert=True)
 
 
 # ── /cancel ────────────────────────────────────────────────────────────────────
@@ -236,11 +259,15 @@ async def cb_queue_cancel(cb: CallbackQuery):
 async def cmd_cancel(message: Message):
     s    = UserSettings.load(message.from_user.id)
     lang = s.language
-    cancelled = queue.cancel_user_job(message.from_user.id)
-    if cancelled:
-        await message.answer(t("cancel_done", lang))
+    count = queue.cancel_all_user_jobs(message.from_user.id)
+    if count:
+        await message.answer(t("cancel_all_done", lang, count=count))
     else:
-        await message.answer(t("cancel_none", lang) + "\n" + t("cancel_impossible", lang))
+        active = queue.user_active_jobs(message.from_user.id)
+        if active:
+            await message.answer(t("cancel_none", lang) + "\n" + t("cancel_impossible", lang))
+        else:
+            await message.answer(t("cancel_none", lang))
 
 
 # ── /stats ─────────────────────────────────────────────────────────────────────

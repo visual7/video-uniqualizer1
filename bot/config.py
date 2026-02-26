@@ -43,6 +43,7 @@ MAX_FILE_SIZE:       int  = int(os.getenv("MAX_FILE_SIZE", 2 * 1024**3))  # 2 GB
 MAX_DURATION:        int  = int(os.getenv("MAX_DURATION", 0))              # 0 = unlimited
 MAX_CONCURRENT_JOBS: int  = int(os.getenv("MAX_CONCURRENT_JOBS", 10))
 RATE_LIMIT_PER_MIN:  int  = int(os.getenv("RATE_LIMIT_PER_MINUTE", 5))
+MAX_USER_QUEUE:      int  = int(os.getenv("MAX_USER_QUEUE", 10))
 USE_GPU:             bool = os.getenv("USE_GPU", "False").lower() == "true"
 
 # ── Logging ────────────────────────────────────────────────────────────────────

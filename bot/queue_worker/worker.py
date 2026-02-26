@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Callable, Optional
 
-from bot.config import MAX_CONCURRENT_JOBS, RATE_LIMIT_PER_MIN, TEMP_DIR, TG_UPLOAD_LIMIT
+from bot.config import MAX_CONCURRENT_JOBS, MAX_USER_QUEUE, RATE_LIMIT_PER_MIN, TEMP_DIR, TG_UPLOAD_LIMIT
 from bot.i18n import t as _t
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ class VideoQueue:
         self._queue:     asyncio.Queue[Job] = asyncio.Queue()
         self._sem:       asyncio.Semaphore  = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
         self._jobs:      dict[str, Job]     = {}
-        self._user_job:  dict[int, str]     = {}  # user_id → active job_id
+        self._user_jobs: dict[int, list[str]] = {}  # user_id → list of active job_ids
         self._rate:      RateLimiter        = RateLimiter(RATE_LIMIT_PER_MIN)
         self._running:   bool               = False
         self._bot:       Any                = None  # set on start
@@ -95,32 +95,43 @@ class VideoQueue:
         wait = self._rate.seconds_until_free(user_id) if not ok else 0.0
         return ok, wait
 
+    def user_active_jobs(self, user_id: int) -> list[Job]:
+        """Return list of active (PENDING/PROCESSING) jobs, auto-expiring stuck ones."""
+        job_ids = self._user_jobs.get(user_id, [])
+        active: list[Job] = []
+        for job_id in job_ids:
+            job = self._jobs.get(job_id)
+            if job is None or job.status not in (JobStatus.PENDING, JobStatus.PROCESSING):
+                continue
+            age = time.time() - job.created_at
+            if job.status == JobStatus.PROCESSING and age > 600:
+                logger.warning(f"Force-expiring stuck PROCESSING job {job.id} (age={age:.0f}s)")
+                job.status = JobStatus.FAILED
+                job.error = "Timeout: job took too long"
+                continue
+            if job.status == JobStatus.PENDING and age > 300:
+                logger.warning(f"Force-expiring stuck PENDING job {job.id} (age={age:.0f}s)")
+                job.status = JobStatus.FAILED
+                job.error = "Timeout: job stuck in queue"
+                continue
+            active.append(job)
+        return active
+
+    def user_queue_full(self, user_id: int) -> bool:
+        return len(self.user_active_jobs(user_id)) >= MAX_USER_QUEUE
+
+    def user_active_job_count(self, user_id: int) -> int:
+        return len(self.user_active_jobs(user_id))
+
     def user_has_active_job(self, user_id: int) -> bool:
-        job_id = self._user_job.get(user_id)
-        if not job_id:
-            return False
-        job = self._jobs.get(job_id)
-        if job is None:
-            return False
-        if job.status not in (JobStatus.PENDING, JobStatus.PROCESSING):
-            return False
-        # Auto-expire stuck jobs (>10 min for processing, >5 min for pending)
-        age = time.time() - job.created_at
-        if job.status == JobStatus.PROCESSING and age > 600:
-            logger.warning(f"Force-expiring stuck PROCESSING job {job.id} (age={age:.0f}s)")
-            job.status = JobStatus.FAILED
-            job.error = "Timeout: job took too long"
-            return False
-        if job.status == JobStatus.PENDING and age > 300:
-            logger.warning(f"Force-expiring stuck PENDING job {job.id} (age={age:.0f}s)")
-            job.status = JobStatus.FAILED
-            job.error = "Timeout: job stuck in queue"
-            return False
-        return True
+        return self.user_active_job_count(user_id) > 0
+
+    def get_user_jobs(self, user_id: int) -> list[Job]:
+        return self.user_active_jobs(user_id)
 
     def get_user_job(self, user_id: int) -> Optional[Job]:
-        job_id = self._user_job.get(user_id)
-        return self._jobs.get(job_id) if job_id else None
+        jobs = self.get_user_jobs(user_id)
+        return jobs[0] if jobs else None
 
     def queue_size(self) -> int:
         return self._queue.qsize()
@@ -152,16 +163,34 @@ class VideoQueue:
             variation=variation,
         )
         self._jobs[job.id] = job
-        self._user_job[user_id] = job.id
+        self._user_jobs.setdefault(user_id, []).append(job.id)
         await self._queue.put(job)
         logger.info(f"Enqueued job {job.id} for user {user_id}")
         return job
 
-    def cancel_user_job(self, user_id: int) -> bool:
-        job = self.get_user_job(user_id)
-        if job and job.status == JobStatus.PENDING:
+    def cancel_job(self, job_id: str, user_id: int) -> bool:
+        """Cancel a specific job by ID if it belongs to user and is PENDING."""
+        job = self._jobs.get(job_id)
+        if job and job.user_id == user_id and job.status == JobStatus.PENDING:
             job.status = JobStatus.CANCELLED
             return True
+        return False
+
+    def cancel_all_user_jobs(self, user_id: int) -> int:
+        """Cancel all PENDING jobs for user. Returns count cancelled."""
+        cancelled = 0
+        for job in self.user_active_jobs(user_id):
+            if job.status == JobStatus.PENDING:
+                job.status = JobStatus.CANCELLED
+                cancelled += 1
+        return cancelled
+
+    def cancel_user_job(self, user_id: int) -> bool:
+        """Legacy: cancel first pending job."""
+        for job in self.user_active_jobs(user_id):
+            if job.status == JobStatus.PENDING:
+                job.status = JobStatus.CANCELLED
+                return True
         return False
 
     # ── Worker loop ────────────────────────────────────────────────────────────
@@ -464,7 +493,7 @@ class VideoQueue:
                 job.settings.processed_today += copies
                 job.settings.save()
 
-            asyncio.create_task(_cleanup_job(self._jobs, job.id, delay=300))
+            asyncio.create_task(_cleanup_job(self._jobs, self._user_jobs, job.id, job.user_id, delay=300))
 
 
 async def _create_chunked_zips(
@@ -538,9 +567,14 @@ def _stage_label(pct: float, msg: str, lang: str = "en") -> str:
         return _t("stage_done", lang)
 
 
-async def _cleanup_job(jobs: dict, job_id: str, delay: int) -> None:
+async def _cleanup_job(jobs: dict, user_jobs: dict, job_id: str, user_id: int, delay: int) -> None:
     await asyncio.sleep(delay)
     jobs.pop(job_id, None)
+    job_list = user_jobs.get(user_id, [])
+    if job_id in job_list:
+        job_list.remove(job_id)
+    if not job_list:
+        user_jobs.pop(user_id, None)
 
 
 def _safe_remove(path: Optional[str]) -> None:
