@@ -185,12 +185,6 @@ async def on_video(message: Message, bot: Bot):
     s = UserSettings.load(user_id)
     lang = s.language
 
-    # Rate limit
-    ok, wait = queue.check_rate(user_id)
-    if not ok:
-        await message.answer(t("video_rate_limit", lang, sec=int(wait)))
-        return
-
     # Queue full?
     if queue.user_queue_full(user_id):
         count = queue.user_active_job_count(user_id)
@@ -269,12 +263,6 @@ async def on_document(message: Message, bot: Bot):
     s = UserSettings.load(user_id)
     lang = s.language
 
-    # Rate limit
-    ok, wait = queue.check_rate(user_id)
-    if not ok:
-        await message.answer(t("video_rate_limit", lang, sec=int(wait)))
-        return
-
     # Queue full?
     if queue.user_queue_full(user_id):
         count = queue.user_active_job_count(user_id)
@@ -340,11 +328,6 @@ async def on_video_url(message: Message, bot: Bot):
     user_id = message.from_user.id
     s = UserSettings.load(user_id)
     lang = s.language
-
-    ok, wait = queue.check_rate(user_id)
-    if not ok:
-        await message.answer(t("video_rate_limit", lang, sec=int(wait)))
-        return
 
     if queue.user_queue_full(user_id):
         count = queue.user_active_job_count(user_id)
@@ -555,13 +538,6 @@ async def cb_run(cb: CallbackQuery, bot: Bot):
     local_path = pending["path"]
     if not os.path.exists(local_path):
         await cb.answer(t("file_expired", lang), show_alert=True)
-        return
-
-    # Rate limit
-    ok, wait = queue.check_rate(user_id)
-    if not ok:
-        await cb.answer(t("video_rate_limit", lang, sec=int(wait)), show_alert=True)
-        _pending_videos[vid_id] = pending  # restore
         return
 
     if queue.user_queue_full(user_id):

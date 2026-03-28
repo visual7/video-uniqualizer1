@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Callable, Optional
 
-from bot.config import MAX_CONCURRENT_JOBS, MAX_USER_QUEUE, RATE_LIMIT_PER_MIN, TEMP_DIR, TG_UPLOAD_LIMIT
+from bot.config import MAX_CONCURRENT_JOBS, MAX_USER_QUEUE, TEMP_DIR, TG_UPLOAD_LIMIT
 from bot.i18n import t as _t
 
 logger = logging.getLogger(__name__)
@@ -45,34 +45,6 @@ class Job:
     progress_msg: str = ""
 
 
-# ── Rate limiter ───────────────────────────────────────────────────────────────
-
-class RateLimiter:
-    def __init__(self, max_per_minute: int):
-        self.max   = max_per_minute
-        self._log: dict[int, list[float]] = {}
-
-    def check(self, user_id: int) -> bool:
-        """Returns True if user is within rate limit."""
-        now = time.time()
-        window = 60.0
-        log = self._log.setdefault(user_id, [])
-        # Purge old
-        self._log[user_id] = [t for t in log if now - t < window]
-        if len(self._log[user_id]) >= self.max:
-            return False
-        self._log[user_id].append(now)
-        return True
-
-    def seconds_until_free(self, user_id: int) -> float:
-        now = time.time()
-        log = self._log.get(user_id, [])
-        if not log:
-            return 0.0
-        oldest = min(log)
-        return max(0.0, 60.0 - (now - oldest))
-
-
 # ── Queue manager ──────────────────────────────────────────────────────────────
 
 class VideoQueue:
@@ -81,7 +53,6 @@ class VideoQueue:
         self._sem:       asyncio.Semaphore  = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
         self._jobs:      dict[str, Job]     = {}
         self._user_jobs: dict[int, list[str]] = {}  # user_id → list of active job_ids
-        self._rate:      RateLimiter        = RateLimiter(RATE_LIMIT_PER_MIN)
         self._running:   bool               = False
         self._bot:       Any                = None  # set on start
 
@@ -90,31 +61,35 @@ class VideoQueue:
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def check_rate(self, user_id: int) -> tuple[bool, float]:
-        ok = self._rate.check(user_id)
-        wait = self._rate.seconds_until_free(user_id) if not ok else 0.0
-        return ok, wait
-
     def user_active_jobs(self, user_id: int) -> list[Job]:
         """Return list of active (PENDING/PROCESSING) jobs, auto-expiring stuck ones."""
         job_ids = self._user_jobs.get(user_id, [])
         active: list[Job] = []
+        expired: list[str] = []
         for job_id in job_ids:
             job = self._jobs.get(job_id)
-            if job is None or job.status not in (JobStatus.PENDING, JobStatus.PROCESSING):
+            if job is None:
+                expired.append(job_id)
+                continue
+            if job.status not in (JobStatus.PENDING, JobStatus.PROCESSING):
+                expired.append(job_id)
                 continue
             age = time.time() - job.created_at
             if job.status == JobStatus.PROCESSING and age > 600:
                 logger.warning(f"Force-expiring stuck PROCESSING job {job.id} (age={age:.0f}s)")
                 job.status = JobStatus.FAILED
                 job.error = "Timeout: job took too long"
+                expired.append(job_id)
                 continue
             if job.status == JobStatus.PENDING and age > 300:
                 logger.warning(f"Force-expiring stuck PENDING job {job.id} (age={age:.0f}s)")
                 job.status = JobStatus.FAILED
                 job.error = "Timeout: job stuck in queue"
+                expired.append(job_id)
                 continue
             active.append(job)
+        if expired:
+            self._user_jobs[user_id] = [jid for jid in job_ids if jid not in expired]
         return active
 
     def user_queue_full(self, user_id: int) -> bool:
